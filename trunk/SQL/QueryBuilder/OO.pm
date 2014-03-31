@@ -1,5 +1,314 @@
 =pod
 
+=head1 NAME
+
+SQL::QueryBuilder::OO - Object oriented SQL query builder
+
+=head1 SYNOPSIS
+
+  use SQL::QueryBuilder::OO;
+
+  $sql = sqlQueryBase::select(qw(id title description), {name => 'author'})
+      ->from('article')
+      ->innerJoin('users', 'userId')
+      ->leftJoin({'comments' => 'c'}, sqlCondition::EQ('userId', 'c.from'))
+      ->where(sqlCondition::AND(
+              sqlCondition::EQ('category')->bind($cat),
+              sqlCondition::NE('hidden')->bind(1)))
+      ->limit(10,20)
+      ->groupBy('title')
+      ->orderBy({'timestamp' => 'DESC'});
+
+  $dbh->do($sql, undef, $sql->gatherBoundArgs());
+
+=head1 DESCRIPTION
+
+This module provides for an object oriented way to create complex SQL queries
+while maintaining code readability. It supports conditions construction and
+bound query parameters. While the module is named C<SQL::QueryBuilder::OO>, this
+name is actually not used when constructing queries. The three main packages to
+build queries are C<sqlQueryBase>, C<sqlCondition> and C<sqlQuery>.
+
+The project is actually a port of PHP classes to construct queries used in one
+of my proprietary projects (which may explain the excessive use of the scope
+resolution operator (C<::>) in the module's sytax).
+
+=head1 BUILDING QUERIES
+
+The package to provide builder interfaces is called C<sqlQueryBase> and has
+these methods:
+
+=head2 SELECT queries
+
+=over 4
+
+=item select(I<COLUMNS...>[, I<OPTIONS>])
+
+Creates a SELECT query object. Columns to select default to C<*> if none are
+given. They are otherwise to be specified as a list of expressions that can be
+literal column names or HASH references with column aliases.
+
+Column names are quoted where appropriate:
+
+  # Build SELECT * query
+  $all = sqlQueryBase::select();
+
+  # Build SELECT ... query
+  $sql = sqlQueryBase::select(
+       # literal column names
+          qw(id title),
+       # column alias
+          {'u.username' => 'author', timestamp => 'authored'},
+       # SELECT specific options
+          [qw(SQL_CACHE SQL_CALC_FOUND_ROWS)]);
+
+The references returned from the above statements are blessed into an internal
+package. Those internal packages will not be documented here, since they may be
+subject to change. Their methods, however, are those of a valid SQL SELECT
+statement. When constructing queries you'll B<have to maintain the order> of
+SQL syntax. This means, that the following will be treated as an error
+I<by perl itself>:
+
+  $sql = sqlQueryBase::select()
+          ->from('table')
+          ->limit(10)
+          ->where(...);
+
+  Can't locate object method "where" via package "sqlSelectAssemble" at ...
+
+The correct order would have been:
+
+  $sql = sqlQueryBase::select()
+          ->from('table')
+          ->where(...)
+          ->limit(10);
+
+The following methods are available to construct the query further:
+
+=item from(I<TABLES...>)
+
+This obviously represents the "FROM" part of a select query. It accepts a list
+of string literals as table names or table aliases:
+
+  $sql = sqlQueryBase::select()->from('posts', {'user' => 'u'});
+
+=item leftJoin(I<TABLE>, I<CONDITION>)
+
+=item innerJoin(I<TABLE>, I<CONDITION>)
+
+=item rightJoin(I<TABLE>, I<CONDITION>)
+
+These methods extend the "FROM" fragment with a left, inner or right table join.
+The table name can either be a string literal or a HASH reference for aliasing
+table names.
+
+The condition should either be an C<sqlCondition> object (see L</"Creating conditions">):
+
+  # SELECT * FROM `table_a` LEFT JOIN `table_b` ON(`column_a` = `column_b`)
+  $sql = sqlQueryBase::select()
+          ->from('table_a')
+          ->leftJoin('table_b', sqlCondition::EQ('column_a', 'column_b'));
+
+...or a string literal of a common column name for the USING clause:
+
+  # SELECT * FROM `table_a` LEFT JOIN `table_b` USING(`id`)
+  $sql = sqlQueryBase::select()
+          ->from('table_a')
+          ->leftJoin('table_b', 'id');
+
+=item where(I<CONDITION>)
+
+This represents the "WHERE" part of a SELECT query. It will accept B<one> object
+of the C<sqlCondition> package (see L</"Creating conditions">).
+
+=item groupBy(I<COLUMNS...>)
+
+This represents the "GROUP BY" statement of a SELECT query.
+
+=item having(I<CONDITION>)
+
+This represents the "HAVING" part of a SELECT query. It will accept B<one> object
+of the C<sqlCondition> package (see L</"Creating conditions">).
+
+=item orderBy(I<COLUMNS...>)
+
+This represents the "ORDER BY" statement of a SELECT query. Columns are expected
+to be string literals or HASH references (B<one> member only) with ordering
+directions:
+
+  $sql = sqlQueryBase::select()
+          ->from('table')
+          ->orderBy('id', {timestamp => 'DESC'}, 'title');
+
+=item limit(I<COUNT>[, I<OFFSET>])
+
+This represents the "LIMIT" fragment of a SELECT query. It deviates from the
+standard SQL expression, as the limit count B<is always> the first argument to
+this method, regardless of a given offset.
+
+=back
+
+=head2 Creating conditions
+
+Conditions can be used as a parameter for C<leftJoin>, C<having>, C<innerJoin>,
+C<rightJoin> or C<where>. They are constructed with the C<sqlCondition> package,
+whose methods are not exported due to their generic names. Instead, the
+"namespace" has to be mentioned for each conditional:
+
+  $cond = sqlCondition::AND(
+          sqlCondition::EQ('id')->bind(1337),
+          sqlCondition::BETWEEN('stamp', "2013-01-06", "2014-03-31"));
+
+Those are all operators:
+
+=head3 Booleans
+
+To logically connect conditions, the following to methods are available:
+
+=over 4
+
+=item AND(I<CONDITIONS...>)
+
+Connect one or more conditions with a boolean AND.
+
+=item OR(I<CONDITIONS...>)
+
+Connect one or more conditions with a boolean OR.
+
+=item NOT(I<CONDITION>)
+
+Negate a condition with an unary NOT.
+
+=back
+
+=head3 Relational operators
+
+All relational operators expect a mandatory column name as their first argument
+and a second optional ride-hand-side column name.
+
+If the optional second parameter is left out, the conditional can be bound (see
+L</"Binding parameters">).
+
+=over 4
+
+=item EQ(I<COLUMN>[, I<RHS-COLUMN>])
+
+B<Eq>ual to operator (C<=>).
+
+=item NE(I<COLUMN>[, I<RHS-COLUMN>])
+
+B<N>ot B<e>qual to operator (C<!=>).
+
+=item LT(I<COLUMN>[, I<RHS-COLUMN>])
+
+B<L>ess B<t>han operator (C<E<lt>>).
+
+=item GT(I<COLUMN>[, I<RHS-COLUMN>])
+
+B<G>reater B<t>han operator (C<E<gt>>).
+
+=item LTE(I<COLUMN>[, I<RHS-COLUMN>])
+
+B<L>ess B<t>han or B<e>qual to operator (C<E<lt>=>).
+
+=item GTE(I<COLUMN>[, I<RHS-COLUMN>])
+
+B<G>reater B<t>han or B<e>qual to operator (C<E<gt>=>).
+
+=back
+
+=head3 SQL specific operators
+
+=over 4
+
+=item BETWEEN(I<COLUMN>, I<START>, I<END>)
+
+Creates an "x BETWEEN start AND end" conditional.
+
+=item IN(I<COLUMN>)
+
+Creates an "x IN(...)" conditional.
+
+B<Note> that, if bound, this method B<will> croak if it encounters an empty
+list. I<This behavior is subject to change in future versions: the statement
+will be reduced to a "falsy" statement and a warning will be issued.>
+
+=item ISNULL(I<COLUMN>)
+
+Creates an "x IS NULL" conditional.
+
+=item ISNOTNULL(I<COLUMN>)
+
+Creates an "x IS NOT NULL" conditional.
+
+=item LIKE(I<COLUMN>, I<PATTERN>)
+
+Creates an "x LIKE pattern" conditional.
+
+B<Note> that the pattern is passed unmodified. Beware of the LIKE pitfalls
+concerning the characters C<%> and C<_>.
+
+=back
+
+=head2 Binding parameters
+
+An SQL conditional can be bound against a parameter via its C<bind()> method:
+
+  $cond = sqlCondition::AND(
+          sqlCondition::EQ('id')->bind(1337),
+          sqlCondition::NOT(
+             sqlCondition::IN('category')->bind([1,2,3,4])));
+
+  print $cond;                        # "`id` = ? AND NOT(`category` IN(?))"
+  @args = $cond->gatherBoundArgs();   # (sqlValueInt(1337),sqlValueList([1,2,3,4]))
+
+A special case are conditionals bound against C<undef> (which is the equivalent
+to SQL C<NULL>):
+
+  $cat = undef;
+  $cond = sqlCondition::OR(
+          sqlCondition::EQ('author')->bind(undef),
+          sqlCondition::NE('category')->bind($cat));
+
+  print $cond;                        # `author` IS NULL OR `category` IS NOT NULL
+  @args = $cond->gatherBoundArgs();   # ()
+
+Since C<`author` = NULL> would never be "true", the condition is replaced with
+the correct C<`author` IS NULL> statement. (Note that the first conditional
+could actually be written C<sqlCondition::ISNULL('author')>. The substitution is
+thus useful when binding against variables of unknown content).
+
+=head1 TODO
+
+=over
+
+=item *
+
+Implement support for UPDATE, INSERT, REPLACE and DELETE statements.
+
+=item *
+
+Implement support for UNION.
+
+=back
+
+=head1 DEPENDENCIES
+
+L<Params::Validate>
+
+=head1 COPYRIGHT
+
+  Copyright (C) 2013-2014 Oliver Schieche.
+
+  This software is a free library. You can modify and/or distribute it
+  under the same terms as Perl itself.
+
+=head1 AUTHOR
+
+Oliver Schieche E<lt>schiecheo@cpan.orgE<gt>
+
+http://perfect-co.de/
+
 $Id$
 
 =cut
@@ -499,7 +808,7 @@ use base 'sqlParameter';
 
 sub new {
 	my $self = shift->SUPER::new(@_);
-	$self->{-precision} = shift || 8;
+	$self->{-precision} = $_[1] || 8;
 	$self
 }
 
@@ -557,7 +866,6 @@ sub addBoundArgs
 		push @{$self->{boundArgs}}, @_;
 		$self
 	}
-
 
 sub gatherBoundArgs
 	{
@@ -936,7 +1244,8 @@ sub gatherConditionArgs
 		if ($self->isa('sqlSelectJoin')) {
 			foreach my $join (@{$self->{joins}}) {
 				my ($type,$table,$condition) = @$join;
-				push @args, $condition->getBoundArgs();
+				push @args, $condition->getBoundArgs()
+					if ref $condition;
 			}
 		}
 
