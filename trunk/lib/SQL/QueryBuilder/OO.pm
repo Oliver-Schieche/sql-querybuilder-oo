@@ -1,3 +1,10 @@
+package SQL::QueryBuilder::OO;
+
+use strict;
+use vars qw($VERSION);
+
+$VERSION = '0.1';
+
 =pod
 
 =head1 NAME
