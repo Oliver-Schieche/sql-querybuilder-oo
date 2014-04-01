@@ -326,7 +326,6 @@ use strict;
 use warnings;
 use overload '""' => '_getInterpolatedQuery';
 
-use DBI;
 use Data::Dumper; # vital
 use Carp qw(croak);
 use Scalar::Util qw(blessed looks_like_number);
