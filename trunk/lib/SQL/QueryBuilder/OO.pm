@@ -3,7 +3,7 @@ package SQL::QueryBuilder::OO;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = '0.1.1';
+$VERSION = '0.1.2';
 
 =pod
 
@@ -397,7 +397,11 @@ sub foundRows
 
 sub getLastInsertId
 	{
-		sqlQuery::db()->last_insert_id
+		my $res = __PACKAGE__->new(q(SELECT LAST_INSERT_ID()))->execute;
+		my $id = $res->fetchColumn(0);
+		$res->freeResource();
+
+		$id
 	}
 
 sub new
@@ -536,6 +540,26 @@ sub _interpolateByIndex
 		$self->{'-interpolated-query'} = $sql;
 	}
 
+sub _interpolateByName
+	{
+		my $self = shift;
+		my $sql = "$self->{-sql}";
+
+		for (my $pos = 0; $pos < length($sql) && -1 != ($pos = index($sql, ':', $pos));) {
+			my ($name) = substr($sql, $pos) =~ m~^:([a-zA-Z_\d-]+)~;
+			my $param = $self->_fetchParameter($name);
+			my $value = "$param";
+
+			$sql =
+				(0 < $pos ? substr($sql, 0, $pos) : '')
+			.	$value
+			.	substr($sql, $pos + 1 + length($name));
+			$pos += length $value;
+		}
+
+		$self->{'-interpolated-query'} = $sql;
+	}
+
 sub _fetchParameter
 	{
 		my $self = shift;
@@ -544,8 +568,8 @@ sub _fetchParameter
 		if (defined($name)) {
 			if (!exists($self->{'-params'}->{$name})) {
 				croak sprintf('No such query parameter "%s"', $name);
-				return $self->{'-params'}->{$name};
 			}
+			return $self->{'-params'}->{$name};
 		} else {
 			unless (ref $self->{'-params'} && @{$self->{'-params'}}) {
 				croak 'Too few query parameters provided';
@@ -582,8 +606,9 @@ sub _query
 			$self->{'-sth'} = undef;
 
 			$err =~ s/\s+at $file line \d+\.\r?\n//;
+			$err =~ s/\s*at line \d$//;
 			$sql =~ s/(?:\r?\n)+$//;
-			croak "$err\nSQL: $sql";
+			croak "$err\n\n<<SQL\n$sql\nSQL\n\nCalled";
 		}
 
 		sqlQueryResult->new($self, $self->{'-sth'});
@@ -616,7 +641,7 @@ sub quoteWhenTable
 			if ref $table || ".$table" =~ m/^(?:\.[a-z_][a-z\d_]*){1,2}$/i;
 		return $table
 			if $table !~ m/^([a-z_][a-z\d_]*)\.\*$/i;
-		return sqlQuery::quoteTable($1);
+		return sqlQuery::quoteTable($1).'.*';
 	}
 
 sub convertArgument
@@ -673,6 +698,12 @@ sub fetchRow
 	{
 		my $self = shift;
 		$self->{'-result'}->fetchrow_hashref
+	}
+
+sub fetchArray
+	{
+		my $self = shift;
+		$self->{'-result'}->fetchrow_array;
 	}
 
 sub fetchColumn
@@ -912,6 +943,7 @@ package sqlSelectFrom;
 use strict;
 use warnings;
 use base 'sqlSelectAssemble';
+use Scalar::Util qw(blessed);
 
 sub new
 	{
@@ -957,7 +989,7 @@ sub translateQueryFields
 				while (@parts) {
 					my ($field,$alias) = splice(@parts, 0, 2);
 
-					if (ref $field && $field->isa('sqlParameter'))
+					if (blessed $field && $field->isa('sqlParameter'))
 						{
 							push @columns, $sqlQuery::PARAMETER_PLACEHOLDER
 								unless $alias;
