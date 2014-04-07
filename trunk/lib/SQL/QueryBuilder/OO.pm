@@ -1,9 +1,10 @@
 package SQL::QueryBuilder::OO;
 
+use 5.010;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = '0.1.2';
+$VERSION = '0.2.0';
 
 =pod
 
