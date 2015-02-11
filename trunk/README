@@ -130,7 +130,8 @@ BUILDING QUERIES
     limit(*COUNT*[, *OFFSET*])
         This represents the "LIMIT" fragment of a SELECT query. It deviates
         from the standard SQL expression, as the limit count is always the
-        first argument to this method, regardless of a given offset.
+        first argument to this method, regardless of a given offset. The first
+        or both parameters may be undef to skip the LIMIT clause.
 
   Creating conditions
     Conditions can be used as a parameter for "leftJoin", "having",

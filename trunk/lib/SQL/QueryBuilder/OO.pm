@@ -4,7 +4,7 @@ use 5.010;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = '0.2.0';
+$VERSION = '0.2.1';
 
 =pod
 
@@ -1071,8 +1071,13 @@ sub new
 sub limit
 	{
 		my $self = shift;
-		$self->{limit} = int(shift());
-		$self->{offset} = int(shift()) if @_;
+
+		if (!@_ || (1 == @_ && !defined($_[0])) || (2 == @_ && !defined($_[0]) && !defined($_[1]))) {
+			$self->{limit} = undef;
+		} else {
+			$self->{limit} = int(shift());
+			$self->{offset} = int(shift()) if @_;
+		}
 		sqlSelectAssemble->new($self);
 	}
 
@@ -1120,15 +1125,15 @@ sub _assemble
 			$s = [];
 
 			foreach my $order (@{$self->{ordering}}) {
-				my ($direction);
-				if ('HASH' eq ref $order) {
-					($direction) = values %$order;
-					($order) = keys %$order;
+				my ($theOrder,$direction) = ($order);
+				if ('HASH' eq ref $theOrder) {
+					($direction) = values %$theOrder;
+					($theOrder) = keys %$theOrder;
 				}
 
-				push @$s, sqlQuery::quoteWhenTable($order)
+				push @$s, sqlQuery::quoteWhenTable($theOrder)
 					unless $direction;
-				push @$s, sqlQuery::quoteWhenTable($order)." $direction"
+				push @$s, sqlQuery::quoteWhenTable($theOrder)." $direction"
 						if $direction;
 			}
 

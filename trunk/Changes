@@ -1,6 +1,10 @@
 Change log for SQL::QueryBuilder::OO
 $Date$
 
+0.2.1	2015-02-11 (Wed, 11 Feb 2015)
+	* added: `limit()` method accepts `undef` as first or both parameters to skip the LIMIT clause
+	* fixed: when passing a HASHREF to the `orderBy()` method, subsequent "toString" executes of a query object will leave the HASHREF intact (was modified)
+
 0.2.0	2014-04-07 (Mon, 07 Apr 2014)
 	* removed another build-breaker (added "use version" statement [http://www.cpantesters.org/cpan/report/bfc9639c-bbe9-11e3-bf29-e1298806f0e4])
 	* changed version number to suppress ("lower version number" warning in PAUSE)
