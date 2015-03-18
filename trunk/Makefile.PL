@@ -12,6 +12,7 @@ WriteMakefile(
 	VERSION_FROM => 'lib/SQL/QueryBuilder/OO.pm',
 	MIN_PERL_VERSION => '5.010',
 	PREREQ_PM => {
-		'Params::Validate' => 0
+		'Params::Validate' => 0,
+		'Date::Parse' => 0
 	}
 );

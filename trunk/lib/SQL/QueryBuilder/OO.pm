@@ -4,7 +4,7 @@ use 5.010;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = '0.2.1';
+$VERSION = '0.2.2';
 
 =pod
 
@@ -16,6 +16,15 @@ SQL::QueryBuilder::OO - Object oriented SQL query builder
 
   use SQL::QueryBuilder::OO;
 
+  # Uses an existing DBI database handle
+  sqlQuery::setup(-dbh => $dbh);
+
+  # Database handle is created when necessary via a sub-routine
+  sqlQuery::setup(-connect => sub {
+      DBI->connect(...);
+  });
+
+  # Full syntax
   $sql = sqlQueryBase::select(qw(id title description), {name => 'author'})
       ->from('article')
       ->innerJoin('users', 'userId')
@@ -27,26 +36,59 @@ SQL::QueryBuilder::OO - Object oriented SQL query builder
       ->groupBy('title')
       ->orderBy({'timestamp' => 'DESC'});
 
-  $dbh->do($sql, undef, $sql->gatherBoundArgs());
+  $sth = sqlQuery::q($sql)->execute();
+  $row = $sth->fetchAssoc();
+  $sth->freeResource();
+
+  # Overloaded operators
+
+  $cond = sqlCondition::EQ('a', 'b') & !sqlCondition::IN('c')->bind([1,2,3]);
+  print "$cond";
+  # -> (`a` = `b` AND NOT(`c` IN(1,2,3)))
 
 =head1 DESCRIPTION
 
 This module provides for an object oriented way to create complex SQL queries
 while maintaining code readability. It supports conditions construction and
 bound query parameters. While the module is named C<SQL::QueryBuilder::OO>, this
-name is actually not used when constructing queries. The three main packages to
-build queries are C<sqlQueryBase>, C<sqlCondition> and C<sqlQuery>.
+name is actually not used when constructing queries. The two main packages to
+build queries are C<sqlQueryBase> and C<sqlCondition>. The package to execute
+them is C<sqlQuery>.
 
 The project is actually a port of PHP classes to construct queries used in one
 of my proprietary projects (which may explain the excessive use of the scope
 resolution operator (C<::>) in the module's sytax).
 
-=head1 BUILDING QUERIES
+=head2 Setting the module up
+
+Module set-up is I<not> optional; you may not be executing any queries, yet, an
+existing (or ad-hoc created) database handle is required for purposes of safely
+quoting interpolated values.
+
+If at any point you're getting an "sqlQuery is not setup, yet." error, you
+forgot to use any one of the following statements.
+
+=head3 Using an existing database handle
+
+To use an existing DBI database handle, put this in your program's prolog:
+
+  sqlQuery::setup(-dbh => $dbh);
+
+=head3 Creating a database handle when needed
+
+To create a new database handle when it's needed (ad-hoc), supply a subroutine
+that will be called I<once>:
+
+  sqlQuery::setup(-connect => sub {
+      DBI->connect(...);
+  });
+
+=head2 Building queries
 
 The package to provide builder interfaces is called C<sqlQueryBase> and has
 these methods:
 
-=head2 SELECT queries
+=head3 SELECT queries
 
 =over 4
 
@@ -152,11 +194,12 @@ directions:
 
 This represents the "LIMIT" fragment of a SELECT query. It deviates from the
 standard SQL expression, as the limit count B<is always> the first argument to
-this method, regardless of a given offset.
+this method, regardless of a given offset. The first or both parameters may be
+C<undef> to skip the LIMIT clause.
 
 =back
 
-=head2 Creating conditions
+=head3 Creating conditions
 
 Conditions can be used as a parameter for C<leftJoin>, C<having>, C<innerJoin>,
 C<rightJoin> or C<where>. They are constructed with the C<sqlCondition> package,
@@ -169,7 +212,7 @@ whose methods are not exported due to their generic names. Instead, the
 
 Those are all operators:
 
-=head3 Booleans
+=head4 Booleans
 
 To logically connect conditions, the following to methods are available:
 
@@ -189,7 +232,7 @@ Negate a condition with an unary NOT.
 
 =back
 
-=head3 Relational operators
+=head4 Relational operators
 
 All relational operators expect a mandatory column name as their first argument
 and a second optional ride-hand-side column name.
@@ -225,7 +268,7 @@ B<G>reater B<t>han or B<e>qual to operator (C<E<gt>=>).
 
 =back
 
-=head3 SQL specific operators
+=head4 SQL specific operators
 
 =over 4
 
@@ -256,9 +299,16 @@ Creates an "x LIKE pattern" conditional.
 B<Note> that the pattern is passed unmodified. Beware of the LIKE pitfalls
 concerning the characters C<%> and C<_>.
 
+=item NOTIN(I<COLUMN>)
+
+Creates an "x NOT IN(...)" conditional.
+
+Convenience for C<sqlCondition::NOT(sqlCondition::IN('x')->bind([1,2,3]))>.
+Please refer to C<IN> for caveats.
+
 =back
 
-=head2 Binding parameters
+=head3 Binding parameters
 
 An SQL conditional can be bound against a parameter via its C<bind()> method:
 
@@ -286,6 +336,214 @@ the correct C<`author` IS NULL> statement. (Note that the first conditional
 could actually be written C<sqlCondition::ISNULL('author')>. The substitution is
 thus useful when binding against variables of unknown content).
 
+=head4 Parameter conversion
+
+Bound parameters are internally converted to a sub-class of C<sqlParameter>.
+Since most scalar values are already converted automatically, a user might never
+need to employ any of those packages listed below. If more complex queries are
+desired, however, they just I<have> to be used.
+
+=over
+
+=item C<sqlValueDate>
+
+=item C<sqlValueDateTime>
+
+To bind a value and use its date or date/time representation, use:
+
+  $cond->bind(new sqlValueDate()); # use current time, return YYYY-MM-DD
+  $cond->bind(new sqlValueDateTime()); # use current time, return YYYY-MM-DD HH:MM:SS
+
+  $tm = mktime(...);
+  $cond->bind(new sqlValueDate($tm)); # use UNIX timestamp; return YYYY-MM-DD
+  $cond->bind(new sqlValueDateTime($tm)); # use UNIX timestamp; return YYYY-MM-DD HH:MM:SS
+
+  $str = "Wed, 6 Jan 82 02:20:00 +0100";
+  $cond->bind(new sqlValueDate($str)); # use textual representation; return YYYY-MM-DD
+  $cond->bind(new sqlValueDateTime($str)); # use textual representation; return YYYY-MM-DD HH:MM:SS
+
+The latter variants using textual representation use L<Date::Parse> to convert a
+string into a UNIX timestamp. Refer to L<Date::Parse> to learn about supported
+formats.
+
+=item C<sqlValueFloat>
+
+To bind a value as a floating point number (with optional precision), use:
+
+  $cond->bind(new sqlValueFloat($number, 4)); # Precision of four; eight is the default
+
+B<Scalars I<looking like> floating point numbers are I<automatically> converted
+to this package when using C<bind()>.>
+
+=item C<sqlValueInt>
+
+To bind a value as an integer, use:
+
+  $cond->bind(new sqlValueInt($number));
+
+B<Scalars I<looking like> (un)signed integers are I<automatically> converted to
+this package when using C<bind()>.>
+
+=item C<sqlValueList>
+
+To create a safe list of values, use:
+
+  sqlCondition::IN('column')->bind(new sqlValueList([1,2,3,4]));
+
+B<Scalars that are ARRAYREFs are I<automatically> converted to this package when
+using C<bind()>.> All elements of the list are subject to conversion as well.
+
+=item C<sqlValueLiteral>
+
+To include a complex statement as-is, use:
+
+  sqlCondition::EQ('a')->bind(new sqlValueLiteral('IF(`b` = `c`, 0, 1)'));
+  # -> `a` = IF(`b` = `c`, 0, 1)
+
+I<Please> do not abuse this to interpolate values into the query: this would
+pose a security risk since these values aren't subject to "escaping".
+
+=item C<sqlValueNull>
+
+To represent MySQL's C<NULL>, use:
+
+  $cond->bind(new sqlValueNull());
+
+B<Scalars evaluating to C<undef> are I<automatically> converted to this package
+when using C<bind()>.>
+
+=item C<sqlValueString>
+
+To bind a value as a string, use:
+
+  $cond->bind(new sqlValueString($value));
+
+B<All scalars that aren't C<undef>, integers, or floats are converted to this
+package when using C<bind()>.> The value is properly escaped before query
+interpolation.
+
+=back
+
+=head4 Named or index-based parameters
+
+The module supports both named or index-based parameters; just not both in a
+mix:
+
+  # Index-based parameters
+  $query = sqlQueryBase::select()
+      ->from('table')
+      ->where(sqlCondition::EQ('id')->bind(1337));
+  print "$query"; # -> SELECT * FROM `table` WHERE `id` = ?
+
+  # Named parameters
+  $query = sqlQueryBase::select()
+      ->from('table')
+      ->where(sqlCondition::EQ('id', ':value'));
+  print "$query"; # -> SELECT * FROM `table` WHERE `id` = :value
+
+Index-based parameters can be bound to the corresponding C<sqlCondition> when
+it's created and are later interpolated. Name based parameters make for cleaner
+query creation statements but require an additional step prior to executing the
+query:
+
+  $query = sqlQueryBase::select()
+      ->from('table')
+      ->where(sqlCondition::EQ('id', ':value'));
+  $res = sqlQuery->new($query)
+      ->setParameters({value => 1337}) # assign name-value pairs here
+      ->execute();
+
+=head3 Conditions with overloaded operators
+
+To regain a little readability, the I<binary> operators C<&> and C<|> and the
+unary C<!> have been overloaded to substitute for C<sqlCondition::AND>,
+C<sqlCondition::OR> and C<sqlCondition::NOT> respectively.
+
+This:
+
+  $cond = sqlCondition::AND(
+          sqlCondition::EQ('a', 'b'),
+          sqlCondition::OR(
+              sqlCondition::NOT(sqlCondition::LIKE('d', "%PATTERN%")),
+              sqlCondition::C('UNIX_TIMESTAMP(`column`) >= DATE_SUB(NOW(), INTERVAL 7 DAY)')));
+
+is the same as this:
+
+  $cond = sqlCondition::EQ('a', 'b')
+        & (!sqlCondition::LIKE('d', "%PATTERN%")
+        | 'UNIX_TIMESTAMP(`column`) >= DATE_SUB(NOW(), INTERVAL 7 DAY)');
+
+=head2 Executing queries
+
+The package to execute queries with is C<sqlQuery>. Depending on its usage, it
+returns an C<sqlQueryResult> package instance:
+
+  $query = sqlQuery->new($sql);
+  $result = $query->execute();
+  $row = $result->fetchAssoc();
+  $result->freeResource();
+
+=head3 Fetching results
+
+A query result of the C<sqlQueryResult> package has these methods:
+
+=over
+
+=item C<fetchAll()>
+
+Fetch all rows, return a list of HASHREFs.
+
+=item C<fetchArray()>
+
+Fetch one row, return the values as a list.
+
+=item C<fetchAssoc()>
+
+Fetch one row, return it as a C<HASHREF>.
+
+=item C<fetchColumn($name)>
+
+Fetch one row, return its named column C<$name> or index-based column (from
+zero).
+
+=item C<fetchRow()> I<(alias)>
+
+Fetch one row, return it as a C<HASHREF>.
+
+=back
+
+=head3 Other methods
+
+The following are other methods of C<sqlQueryResult> unrelated to fetching data:
+
+=over
+
+=item C<freeResource()>
+
+Finishes an executed statement, freeing its resources.
+
+=item C<getNumRows()>
+
+=item C<numRows()>
+
+Return number of rows in a C<SELECT> query.
+
+=back
+
+=head1 EXAMPLES
+
+=head2 Execute a single statement
+
+=head3 Index-based parameters
+
+  sqlQuery::exec('UPDATE `foo` SET `bar` = ?', 'splort'); # returns number of affected rows
+
+=head3 Named parameters
+
+  sqlQuery::exec('UPDATE `foo` SET `bar` = :bar', {
+      bar: 'splort'
+  }); # returns number of affected rows
+
 =head1 TODO
 
 =over
@@ -304,13 +562,6 @@ Implement support for UNION.
 
 L<Params::Validate>
 
-=head1 COPYRIGHT
-
-  Copyright (C) 2013-2014 Oliver Schieche.
-
-  This software is a free library. You can modify and/or distribute it
-  under the same terms as Perl itself.
-
 =head1 AUTHOR
 
 Oliver Schieche E<lt>schiecheo@cpan.orgE<gt>
@@ -318,6 +569,13 @@ Oliver Schieche E<lt>schiecheo@cpan.orgE<gt>
 http://perfect-co.de/
 
 $Id$
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013-2015 Oliver Schieche.
+
+This software is a free library. You can modify and/or distribute it under the
+same terms as Perl itself.
 
 =cut
 ##------------------------------------------------------------------------------
@@ -328,7 +586,7 @@ use warnings;
 use overload '""' => '_getInterpolatedQuery';
 
 use Data::Dumper; # vital
-use Carp qw(croak);
+use Carp qw(croak cluck);
 use Scalar::Util qw(blessed looks_like_number);
 use Params::Validate qw(:all);
 
@@ -379,9 +637,9 @@ sub exec
 	{
 		my $sql = shift;
 		my $q = __PACKAGE__->new($sql);
-		my $res = $q->execute(@_);
-		my $rows = $res->numRows;
-		$res->freeResource();
+		my $rows = $q->execute(@_);
+		cluck('Discarded query with results'), $rows = undef
+			if blessed($rows) && $rows->isa('sqlQueryResult');
 		undef($q);
 
 		$rows
@@ -528,7 +786,8 @@ sub _interpolateByIndex
 		my $sql = "$self->{-sql}";
 
 		for (my $pos = 0; $pos < length($sql) && -1 != ($pos = index($sql, $sqlQuery::PARAMETER_PLACEHOLDER, $pos));) {
-			my $param = $self->_fetchParameter();
+			my $param = eval{$self->_fetchParameter()};
+			croak "$@: interpolated so far: $sql" if $@;
 			my $value = "$param";
 
 			$sql =
@@ -548,7 +807,8 @@ sub _interpolateByName
 
 		for (my $pos = 0; $pos < length($sql) && -1 != ($pos = index($sql, ':', $pos));) {
 			my ($name) = substr($sql, $pos) =~ m~^:([a-zA-Z_\d-]+)~;
-			my $param = $self->_fetchParameter($name);
+			my $param = eval{$self->_fetchParameter($name)};
+			croak "$@: interpolated so far: $sql" if $@;
 			my $value = "$param";
 
 			$sql =
@@ -594,25 +854,34 @@ sub _query
 		my $self = shift;
 		my $sql = shift;
 		my $dbh = sqlQuery::dbh();
+		my $error;
 
-		$self->{'-sth'} = $dbh->prepare($sql);
+		EXECUTE: {
+			if ($sql !~ m/^select/i) {
+				local $dbh->{RaiseError} = 1;
+				local $dbh->{PrintError} = 0;
+				my $rows = eval{$dbh->do($sql)};
+				$error = $@, last EXECUTE if $@;
+				return $rows;
+			}
 
-		local $self->{'-sth'}->{RaiseError} = 1;
-		local $self->{'-sth'}->{PrintError} = 0;
-		eval {$self->{'-sth'}->execute};
-		if ($@) {
-			my $err = $@;
-			my $file = __FILE__;
+			$self->{'-sth'} = $dbh->prepare($sql);
 
-			$self->{'-sth'} = undef;
-
-			$err =~ s/\s+at $file line \d+\.\r?\n//;
-			$err =~ s/\s*at line \d$//;
-			$sql =~ s/(?:\r?\n)+$//;
-			croak "$err\n\n<<SQL\n$sql\nSQL\n\nCalled";
+			local $self->{'-sth'}->{RaiseError} = 1;
+			local $self->{'-sth'}->{PrintError} = 0;
+			eval {$self->{'-sth'}->execute};
+			$error = $@, last EXECUTE if $@;
+			return sqlQueryResult->new($self, $self->{'-sth'});
 		}
 
-		sqlQueryResult->new($self, $self->{'-sth'});
+		my $file = __FILE__;
+
+		$self->{'-sth'} = undef;
+
+		$error =~ s/\s+at $file line \d+\.\r?\n//;
+		$error =~ s/\s*at line \d$//;
+		$sql =~ s/(?:\r?\n)+$//;
+		croak "$error\n\n<<SQL\n$sql\nSQL\n\nCalled";
 	}
 
 sub quoteTable
@@ -875,6 +1144,59 @@ sub new {
 
 sub getSafeQuotedValue {
 	join ',', map {"$_"} @{shift->{-value}};
+}
+##------------------------------------------------------------------------------
+package sqlValueDateTimeBase;
+
+use strict;
+use warnings;
+use base 'sqlParameter';
+
+use Date::Parse;
+use Scalar::Util qw(looks_like_number);
+
+sub new {
+	my $self = shift->SUPER::new(@_);
+
+	unless (defined $self->{-value}) {
+		$self->{-value} = time;
+	} elsif (looks_like_number $self->{-value}) {
+
+	} else {
+		$self->{-value} = str2time($self->{-value});
+	}
+
+	$self
+}
+
+sub getSafeQuotedValue {
+	sqlQuery::dbh()->quote(shift->format());
+}
+
+sub format {
+	die __PACKAGE__.'::format() is "abstract"';
+}
+##------------------------------------------------------------------------------
+package sqlValueDate;
+
+use strict;
+use warnings;
+use base 'sqlValueDateTimeBase';
+use POSIX qw(strftime);
+
+sub format {
+	strftime '%Y-%m-%d', localtime shift->{-value};
+}
+##------------------------------------------------------------------------------
+package sqlValueDateTime;
+
+use strict;
+use warnings;
+use base 'sqlValueDateTimeBase';
+use POSIX qw(strftime);
+
+sub format {
+	strftime '%Y-%m-%d %H:%M:%S', localtime shift->{-value};
 }
 ##------------------------------------------------------------------------------
 package sqlSelectAssemble;
@@ -1240,7 +1562,7 @@ sub where
 		my $condition = shift;
 
 		die 'Invalid condition'
-			unless ref $condition && $condition->isa('sqlCondition');
+			unless !defined($condition) || (ref $condition && $condition->isa('sqlCondition'));
 
 		$self->{whereCond} = $condition;
 		sqlSelectGroupBy->new($self);
@@ -1349,7 +1671,10 @@ use warnings;
 use feature 'switch';
 use overload
 	'""' => 'assemble',
-	'+' => 'overloadAdd';
+	'+' => 'overloadAdd',
+	'!' => 'overloadNot',
+	'&' => 'overloadAnd',
+	'|' => 'overloadOr';
 use constant TYPE_DEFAULT => 1;
 use constant TYPE_CONNECT_AND => 2;
 use constant TYPE_CONNECT_OR => 3;
@@ -1357,6 +1682,7 @@ use constant TYPE_UNARY_NOT => 4;
 
 use Carp qw(confess);
 use Params::Validate qw(:all);
+use Scalar::Util qw(blessed);
 
 sub new
 	{
@@ -1414,6 +1740,38 @@ sub overloadAdd
 		warn "sqlCondition + sqlCondition will modify the left operand"
 			if defined $leftConstant;
 		$left->add($right);
+	}
+
+sub getOverloadArgs
+	{
+		my ($left,$right,$swap) = @_;
+
+		($left,$right) = ($right,$left) if $swap;
+
+		$left = sqlCondition::C($left) unless ref $left;
+		$right = sqlCondition::C($right) unless ref $right;
+
+		die 'Illegal LHS operand' unless blessed($left) && $left->isa('sqlCondition');
+		die 'Illegal RHS operand' unless blessed($right) && $left->isa('sqlCondition');
+
+		($left,$right);
+	}
+
+sub overloadAnd
+	{
+		my ($left,$right) = getOverloadArgs(@_);
+		sqlCondition::AND($left, $right);
+	}
+
+sub overloadNot
+	{
+		sqlCondition::NOT($_[0]);
+	}
+
+sub overloadOr
+	{
+		my ($left,$right) = getOverloadArgs(@_);
+		sqlCondition::OR($left, $right);
 	}
 
 sub add
@@ -1501,6 +1859,12 @@ sub IN
 		C("%s IN($sqlQuery::PARAMETER_PLACEHOLDER)", sqlQuery::quoteWhenTable($column));
 	}
 
+sub NOTIN
+	{
+		my $column = shift;
+		C("%s NOT IN($sqlQuery::PARAMETER_PLACEHOLDER)", sqlQuery::quoteWhenTable($column));
+	}
+
 sub LIKE
 	{
 		my ($column,$pattern) = validate_pos @_,
@@ -1577,7 +1941,13 @@ sub connectedList
 		my $type = shift;
 		my $cond = sqlCondition->new($type);
 
-		$cond->insert($_) foreach @_;
+		foreach my $a (@_) {
+			$cond->insert($a), next unless blessed($a) && $a->isa('sqlCondition');
+			$cond->insert($a), next if $a->{type} != $type;
+			$cond->_bind($_) foreach $a->releaseBoundArgs();
+			$cond->insert(@{$a->{_parts}});
+		}
+
 		$cond
 	}
 
