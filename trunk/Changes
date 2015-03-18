@@ -1,6 +1,14 @@
 Change log for SQL::QueryBuilder::OO
 $Date$
 
+0.2.2	2015-03-18 (Wed, 18 Mar 2015)
+	* added: operator overloading for `sqlCondition`s
+	* added: `sqlValueDate` and `sqlValueDateTime` binding parameters
+	* added: `where()` method accepts `undef` as condition to allow for unconditional queries
+	* added: `sqlCondition::NOTIN()`
+	* fixed: `sqlQuery::exec` returns the number of affected rows of a non-SELECT statement
+	* completed documentation
+
 0.2.1	2015-02-11 (Wed, 11 Feb 2015)
 	* added: `limit()` method accepts `undef` as first or both parameters to skip the LIMIT clause
 	* fixed: when passing a HASHREF to the `orderBy()` method, subsequent "toString" executes of a query object will leave the HASHREF intact (was modified)
