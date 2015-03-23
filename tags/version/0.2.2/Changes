@@ -1,0 +1,36 @@
+Change log for SQL::QueryBuilder::OO
+$Date$
+
+0.2.2	2015-03-18 (Wed, 18 Mar 2015)
+	* added: operator overloading for `sqlCondition`s
+	* added: `sqlValueDate` and `sqlValueDateTime` binding parameters
+	* added: `where()` method accepts `undef` as condition to allow for unconditional queries
+	* added: `sqlCondition::NOTIN()`
+	* fixed: `sqlQuery::exec` returns the number of affected rows of a non-SELECT statement
+	* completed documentation
+
+0.2.1	2015-02-11 (Wed, 11 Feb 2015)
+	* added: `limit()` method accepts `undef` as first or both parameters to skip the LIMIT clause
+	* fixed: when passing a HASHREF to the `orderBy()` method, subsequent "toString" executes of a query object will leave the HASHREF intact (was modified)
+
+0.2.0	2014-04-07 (Mon, 07 Apr 2014)
+	* removed another build-breaker (added "use version" statement [http://www.cpantesters.org/cpan/report/bfc9639c-bbe9-11e3-bf29-e1298806f0e4])
+	* changed version number to suppress ("lower version number" warning in PAUSE)
+
+0.1.2	2014-04-03 (Thu, 03 Apr 2014)
+	* replaced DBI's `last_insert_id` with (less portable) `LAST_INSERT_ID()` SQL function call
+	* added missing `_interpolateByName`
+	* added `fetchArray`
+	* fixed bug when fetching named parameters
+	* fixed bug when quoting "select all from table" references (table.*)
+	* chose the lazy way and added man-page as README
+
+0.1.1	2014-04-01 (Tue, 01 Apr 2014)
+	* Removed "use DBI" which broke tests mostly on BSD systems
+
+0.1		2014-03-31 (Mon, 31 Mar 2014)
+	* PHP port completed
+	* Added documentation
+	* Restructured for MakeMaker layout
+
+$Revision$
