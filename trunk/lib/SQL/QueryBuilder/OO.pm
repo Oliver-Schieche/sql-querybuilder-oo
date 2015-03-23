@@ -541,7 +541,7 @@ Return number of rows in a C<SELECT> query.
 =head3 Named parameters
 
   sqlQuery::exec('UPDATE `foo` SET `bar` = :bar', {
-      bar: 'splort'
+      bar => 'splort'
   }); # returns number of affected rows
 
 =head1 TODO
@@ -560,7 +560,17 @@ Implement support for UNION.
 
 =head1 DEPENDENCIES
 
+=over
+
+=item *
+
 L<Params::Validate>
+
+= item *
+
+L<Date::Parse>
+
+=back
 
 =head1 AUTHOR
 
