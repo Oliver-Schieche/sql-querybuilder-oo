@@ -1,0 +1,46 @@
+
+# $Id$
+
+severity = 1
+verbose  = 11
+theme = docs && (alfa || pbp || bugs)
+
+#------------------------------------------------------------------------------
+
+[-CodeLayout::RequireTidyCode]
+
+[CodeLayout::ProhibitHardTabs]
+allow_leading_tabs = 1
+add_themes = alfa
+
+[Documentation::PodSpelling]
+stop_words = RHS OO TODO
+add_themes = docs
+
+[Documentation::RequirePodLinksIncludeText]
+add_themes = docs
+
+[Documentation::RequirePodSections]
+lib_sections    = NAME|SYNOPSIS|DESCRIPTION|TODO|AUTHOR|LICENSE AND COPYRIGHT
+add_themes = docs
+
+[Miscellanea::RequireRcsKeywords]
+keywords = Id
+add_themes = alfa
+
+[-Modules::ProhibitMultiplePackages]
+
+[NamingConventions::Capitalization]
+package_exemptions = sql.*
+
+[-Subroutines::ProhibitBuiltinHomonyms]
+
+[TestingAndDebugging::RequireUseStrict]
+add_themes = alfa
+
+[TestingAndDebugging::RequireUseWarnings]
+add_themes = alfa
+
+[-ValuesAndExpressions::ProhibitConstantPragma]
+
+[-Variables::ProhibitPackageVars]
