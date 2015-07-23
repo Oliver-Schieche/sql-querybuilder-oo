@@ -13,12 +13,14 @@ use warnings;
 use File::Spec;
 use Test::More;
 use English qw(-no_match_vars);
-use Env qw($TEST_CRITIC $TEST_VERBOSE);
 
 use constant GENTLE => 5;
 use constant BRUTAL => 1;
 
 our $VERSION = '1.03';
+
+my $TEST_CRITIC = BRUTAL;
+my $TEST_VERBOSE = 1;
 
 if ( not $TEST_CRITIC ) {
     my $msg = 'Perl::Critic test. Set $ENV{TEST_CRITIC} to enable: 1-5 for severity, above 5 for resource file';
