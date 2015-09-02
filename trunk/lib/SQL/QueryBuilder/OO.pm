@@ -19,7 +19,7 @@ use Scalar::Util qw(blessed looks_like_number);
 use Params::Validate qw(:all);
 
 $sqlQuery::DBI = undef;
-%sqlQuery::params = ();
+%sqlQuery::PARAMS = ();
 $sqlQuery::PARAMETER_PLACEHOLDER = '?';
 
 sub setup
@@ -34,7 +34,7 @@ sub setup
 				croak('Make up your mind: either use "-dbh" to pass a handle or "-connect" for ad-hoc connecting');
 			}
 
-		%sqlQuery::params = %params;
+		%sqlQuery::PARAMS = %params;
 
 		return 1
 	}
@@ -42,10 +42,10 @@ sub setup
 sub dbh
 	{
 		unless (defined $sqlQuery::DBI) {
-			if (defined $sqlQuery::params{'-dbh'}) {
-				$sqlQuery::DBI = $sqlQuery::params{'-dbh'};
-			} elsif (defined $sqlQuery::params{'-connect'}) {
-				$sqlQuery::DBI = eval {$sqlQuery::params{'-connect'}->()};
+			if (defined $sqlQuery::PARAMS{'-dbh'}) {
+				$sqlQuery::DBI = $sqlQuery::PARAMS{'-dbh'};
+			} elsif (defined $sqlQuery::PARAMS{'-connect'}) {
+				$sqlQuery::DBI = eval {$sqlQuery::PARAMS{'-connect'}->()};
 				croak 'Setup failed; ad-hoc connector died: '.$@ if $@;
 			} else {
 				croak 'sqlQuery is not setup, yet.';
@@ -57,7 +57,7 @@ sub dbh
 
 sub q
 	{
-		local $Carp::CarpLevel = $Carp::CarpLevel + 2;
+		local $Carp::CarpLevel = $Carp::CarpLevel + 2; ## no critic
 		return __PACKAGE__->new(@_);
 	}
 
@@ -66,10 +66,12 @@ sub exec
 		my $sql = shift;
 		my $q = __PACKAGE__->new($sql);
 		my $rows = $q->execute(@_);
-		cluck('Discarded query with results'), $rows = undef
-			if blessed($rows) && $rows->isa('sqlQueryResult');
-		undef $q;
+		if (blessed($rows) && $rows->isa('sqlQueryResult')) {
+			cluck('Discarded query with results');
+			$rows = undef;
+		}
 
+		undef $q;
 		return $rows
 	}
 
@@ -171,7 +173,7 @@ sub _populateParameters
 		my $self = shift;
 
 		if (defined $self->{'-params'}) {
-			local $Carp::CarpLevel = $Carp::CarpLevel + 2;
+			local $Carp::CarpLevel = $Carp::CarpLevel + 2; ## no critic
 			croak 'Query parameters are already populated'
 		}
 
@@ -231,7 +233,7 @@ sub _interpolateByIndex
 			$sql =
 				(0 < $pos ? substr($sql, 0, $pos) : '') .
 				$value .
-				substr($sql, $pos + 1);
+				(substr $sql, $pos + 1);
 			$pos += length $value;
 		}
 
@@ -249,14 +251,14 @@ sub _interpolateByName
 		while(1) {
 			last if $pos >= length($sql) || 0 > ($pos = index $sql, q(:), $pos);
 
-			my ($name) = substr($sql, $pos) =~ m~^:([a-zA-Z_\d-]+)~;
+			my ($name) = (substr $sql, $pos) =~ m/^:([[:lower:][:upper:]_\d-]+)/;
 			my $param = eval{$self->_fetchParameter($name)};
 			croak "$@: interpolated so far: $sql" if $@;
 			my $value = "$param";
 
 			$sql = (0 < $pos ? substr($sql, 0, $pos) : '') .
 				$value .
-				substr($sql, $pos + 1 + length($name));
+				(substr $sql, $pos + 1 + length $name);
 			$pos += length $value;
 		}
 
@@ -272,7 +274,7 @@ sub _fetchParameter
 
 		if (defined $name) {
 			if (!exists($self->{'-params'}->{$name})) {
-				croak sprintf('No such query parameter "%s"', $name);
+				croak sprintf 'No such query parameter "%s"', $name;
 			}
 			return $self->{'-params'}->{$name};
 		} else {
@@ -306,8 +308,11 @@ sub _query
 			if ($sql !~ m/^select/i) {
 				local $dbh->{RaiseError} = 1;
 				local $dbh->{PrintError} = 0;
-				my $rows = eval{$dbh->do($sql)};
-				$error = $@, last EXECUTE if $@;
+				my $rows;
+				eval{$dbh->do($sql); 1} or do {
+					$error = $@;
+					last EXECUTE;
+				};
 				return $rows;
 			}
 
@@ -315,8 +320,10 @@ sub _query
 
 			local $self->{'-sth'}->{RaiseError} = 1;
 			local $self->{'-sth'}->{PrintError} = 0;
-			eval {$self->{'-sth'}->execute};
-			$error = $@, last EXECUTE if $@;
+			eval {$self->{'-sth'}->execute; 1} or do {
+				$error = $@;
+				last EXECUTE;
+			};
 			return sqlQueryResult->new($self, $self->{'-sth'});
 		}
 
@@ -324,7 +331,7 @@ sub _query
 
 		$self->{'-sth'} = undef;
 
-		$error =~ s/\s+at $file line \d+\.\r?\n//;
+		$error =~ s/\s+at $file line \d+[.]\r?\n//;
 		$error =~ s/\s*at line \d$//;
 		$sql =~ s/(?:\r?\n)+$//;
 		croak "$error\n\n<<SQL\n$sql\nSQL\n\nCalled";
@@ -339,12 +346,12 @@ sub quoteTable
 				my ($k,$v);
 				($k) = keys %$table;
 				($v) = values %$table;
-				return sprintf('%s AS %s', sqlQuery::quoteTable($k), sqlQuery::quoteTable($v));
+				return sprintf '%s AS %s', sqlQuery::quoteTable($k), sqlQuery::quoteTable($v);
 			}
 
 		return '*'
 			if '*' eq $table;
-		$table = join '.', map {"`$_`"} split('\.', $table);
+		$table = join '.', map {"`$_`"} split /[.]/, $table;
 		$table =~ s/`+/`/g;
 		return $table
 	}
@@ -354,10 +361,13 @@ sub quoteWhenTable
 		my $table = shift;
 
 		return sqlQuery::quoteTable($table)
-			if ref $table || ".$table" =~ m/^(?:\.[a-z_][a-z\d_]*){1,2}$/i;
-		return $table
-			if $table !~ m/^([a-z_][a-z\d_]*)\.\*$/i;
-		return sqlQuery::quoteTable($1).'.*';
+			if ref $table || ".$table" =~ m/^(?:[.][[:lower:]_][[:lower:]\d_]*){1,2}$/i;
+
+		if ($table =~ m/^([[:lower:]_][[:lower:]\d_]*)[.][*]$/i) {
+			return sqlQuery::quoteTable($1).'.*';
+		} else {
+			return $table;
+		}
 	}
 
 sub convertArgument
@@ -366,7 +376,7 @@ sub convertArgument
 		my $value = _convertArgument($arg);
 
 		unless (defined $value) {
-			local $Carp::CarpLevel = $Carp::CarpLevel + 1;
+			local $Carp::CarpLevel = $Carp::CarpLevel + 1; ## no critic
 			croak 'Argument to "sqlCondition::bind()" cannot be converted; consider using an implicit "sqlValue" instance instead'
 		}
 
@@ -480,15 +490,16 @@ sub select
 		my @params;
 
 		if (@_ && 'ARRAY' eq ref $_[-1]) {
-			@params = @{pop()};
+			@params = @{pop()}; ## no critic
 		}
 
 		unless (@_) {
 			@fields = '*';
 		} else {
 			@fields = (
-				split(',', join(',', grep {!ref} @_)),
-				grep {ref} @_);
+				(split /,/, (join ',', grep {!ref} @_)),
+				grep {ref} @_
+			);
 		}
 
 		return sqlSelectFrom->new(
@@ -512,7 +523,7 @@ sub new
 
 sub getSafeQuotedValue
 	{
-		croak "sqlParameter::getSafeQuotedValue() is abstract; implement it in ".(ref $_[0])
+		croak 'sqlParameter::getSafeQuotedValue() is abstract; implement it in '.(ref $_[0])
 	}
 ##------------------------------------------------------------------------------
 package sqlValueNull;
@@ -566,7 +577,7 @@ sub new {
 
 sub getSafeQuotedValue {
 	my $self = shift;
-	return sprintf("%.$self->{-precision}f", $self->{-value})
+	return sprintf '%.'.$self->{-precision}.'f', $self->{-value}
 }
 ##------------------------------------------------------------------------------
 package sqlValueList;
@@ -580,7 +591,7 @@ sub new {
 	my $self = shift->SUPER::new(@_);
 
 	unless (@{$self->{-value}}) {
-		local $Carp::CarpLevel = $Carp::CarpLevel + 2;
+		local $Carp::CarpLevel = $Carp::CarpLevel + 2; ## no critic
 		croak 'Empty lists can break SQL syntax.';
 	}
 
@@ -597,6 +608,7 @@ use strict;
 use warnings;
 use base 'sqlParameter';
 
+use Carp;
 use Date::Parse;
 use Scalar::Util qw(looks_like_number);
 
@@ -611,15 +623,15 @@ sub new {
 		$self->{-value} = str2time($self->{-value});
 	}
 
-	$self
+	return $self
 }
 
 sub getSafeQuotedValue {
-	sqlQuery::dbh()->quote(shift->format());
+	return sqlQuery::dbh()->quote(shift->format());
 }
 
 sub format {
-	die __PACKAGE__.'::format() is "abstract"';
+	croak __PACKAGE__.'::format() is "abstract"';
 }
 ##------------------------------------------------------------------------------
 package sqlValueDate;
@@ -630,7 +642,7 @@ use base 'sqlValueDateTimeBase';
 use POSIX qw(strftime);
 
 sub format {
-	strftime '%Y-%m-%d', localtime shift->{-value};
+	return strftime '%Y-%m-%d', localtime shift->{-value};
 }
 ##------------------------------------------------------------------------------
 package sqlValueDateTime;
@@ -641,7 +653,7 @@ use base 'sqlValueDateTimeBase';
 use POSIX qw(strftime);
 
 sub format {
-	strftime '%Y-%m-%d %H:%M:%S', localtime shift->{-value};
+	return strftime '%Y-%m-%d %H:%M:%S', localtime shift->{-value};
 }
 ##------------------------------------------------------------------------------
 package sqlSelectAssemble;
@@ -658,7 +670,7 @@ sub new
 		my $self = bless {boundArgs => undef, prev => $prev, %args}, $class;
 
 		if ($prevClass) {
-			confess sprintf('Invalid predecessor. Got "%s". Wanted "%s"', ref $self->{prev}, $prevClass)
+			confess sprintf 'Invalid predecessor. Got "%s". Wanted "%s"', ref $self->{prev}, $prevClass
 				unless ref $self->{prev} && $self->{prev}->isa($prevClass);
 		}
 
@@ -755,28 +767,28 @@ sub translateQueryFields
 				}
 
 				while (@parts) {
-					my ($field,$alias) = splice(@parts, 0, 2);
+					my ($field,$alias) = (splice @parts, 0, 2);
 
 					if (blessed $field && $field->isa('sqlParameter'))
 						{
 							push @columns, $sqlQuery::PARAMETER_PLACEHOLDER
 								unless $alias;
-							push @columns, sprintf('%s AS %s',
+							push @columns, sprintf '%s AS %s',
 									$sqlQuery::PARAMETER_PLACEHOLDER,
-									sqlQuery::quoteTable($alias))
+									sqlQuery::quoteTable($alias)
 								if $alias;
 							$self->addBoundArgs($field);
 							next;
 						}
 
 					$field = sqlQuery::quoteWhenTable($field)
-						if '*' ne $field && 0 == ~index($field, ' ');
+						if '*' ne $field && 0 == ~index $field, ' ';
 
 					unless ($alias) {
 						push @columns, $field
 					} else {
 						$alias = sqlQuery::quoteWhenTable($alias)
-							unless ~index($alias, ' ');
+							unless ~index $alias, ' ';
 						push @columns, "\n\t$field AS $alias";
 					}
 				}
@@ -790,9 +802,9 @@ sub _assemble
 		my $self = shift;
 		my $s = 'SELECT';
 
-		$s .= ' ' . join(',', @{$self->{params}})
+		$s .= ' ' . join ',', @{$self->{params}}
 			if @{$self->{params}};
-		$s .= ' ' . join(',', @{$self->{queryFields}});
+		$s .= ' ' . join ',', @{$self->{queryFields}};
 
 		if (defined $self->{tables}) {
 			$s .= "\nFROM ";
@@ -808,7 +820,7 @@ sub _assemble
 				}
 
 				while (@tables) {
-					my ($table,$alias) = splice(@tables, 0, 2);
+					my ($table,$alias) = (splice @tables, 0, 2);
 
 					push @t, sqlQuery::quoteTable($table)
 						unless $alias;
@@ -842,8 +854,8 @@ sub limit
 		if (!@_ || (1 == @_ && !defined $_[0]) || (2 == @_ && !defined $_[0] && !defined $_[1])) {
 			$self->{limit} = undef;
 		} else {
-			$self->{limit} = int(shift());
-			$self->{offset} = int(shift()) if @_;
+			$self->{limit} = int shift;
+			$self->{offset} = int shift if @_;
 		}
 		return sqlSelectAssemble->new($self);
 	}
@@ -915,6 +927,7 @@ package sqlSelectHaving;
 
 use strict;
 use base 'sqlSelectOrderBy';
+use Carp 'confess';
 
 sub new
 	{
@@ -926,7 +939,7 @@ sub having
 		my $self = shift;
 		my $condition = shift;
 
-		die 'Invalid condition'
+		confess 'Invalid condition'
 			unless ref $condition && $condition->isa('sqlCondition');
 
 		$self->{havingCond} = $condition;
@@ -965,9 +978,9 @@ use overload '+' => 'union';
 
 sub union
 	{
-		my ($left,$right) = @_;
+		my ($lhs,$rhs) = @_;
 
-		return "($left) UNION ($right)";
+		return "($lhs) UNION ($rhs)";
 	}
 
 sub new
@@ -1000,14 +1013,15 @@ package sqlSelectWhere;
 
 use strict;
 use base 'sqlSelectGroupBy';
+use Carp 'confess';
 
 sub where
 	{
 		my $self = shift;
 		my $condition = shift;
 
-		die 'Invalid condition'
-			unless !defined($condition) || (ref $condition && $condition->isa('sqlCondition'));
+		confess 'Invalid condition'
+			if defined $condition && !(ref $condition && $condition->isa('sqlCondition'));
 
 		$self->{whereCond} = $condition;
 		return sqlSelectGroupBy->new($self);
@@ -1097,7 +1111,7 @@ sub _assemble
 					$_ = $condition->assemble();
 					$j .= "ON($_)";
 				} else {
-					confess sprintf('Cannot use argument "%s" as join condition', $condition);
+					confess sprintf 'Cannot use argument "%s" as join condition', $condition;
 				}
 
 				push @$s, "$j\n";
@@ -1113,6 +1127,7 @@ package sqlCondition;
 
 use strict;
 use warnings;
+no if $] >= 5.017011, warnings => 'experimental::smartmatch';
 use feature 'switch';
 use overload
 	'""' => 'assemble',
@@ -1120,12 +1135,12 @@ use overload
 	'!' => 'overloadNot',
 	'&' => 'overloadAnd',
 	'|' => 'overloadOr';
+
 use constant TYPE_DEFAULT => 1;
 use constant TYPE_CONNECT_AND => 2;
 use constant TYPE_CONNECT_OR => 3;
 use constant TYPE_UNARY_NOT => 4;
-
-use Carp qw(confess);
+use Carp qw(confess cluck);
 use Params::Validate qw(:all);
 use Scalar::Util qw(blessed);
 
@@ -1145,7 +1160,7 @@ sub new
 		if (TYPE_UNARY_NOT == $self->{type})
 			{
 				$self->{_argument} = shift;
-				die 'Invalid argument' unless
+				confess 'Invalid argument' unless
 					ref $self->{_argument} && $self->{_argument}->isa('sqlCondition');
 				$self->{_argument}->setParent($self);
 			}
@@ -1182,43 +1197,43 @@ sub assemble
 
 sub overloadAdd
 	{
-		my ($left,$right,$leftConstant) = @_;
+		my ($lhs,$rhs,$leftConstant) = @_;
 
-		warn "sqlCondition + sqlCondition will modify the left operand"
+		cluck 'sqlCondition + sqlCondition will modify the left operand'
 			if defined $leftConstant;
-		return $left->add($right);
+		return $lhs->add($rhs);
 	}
 
 sub getOverloadArgs
 	{
-		my ($left,$right,$swap) = @_;
+		my ($lhs,$rhs,$swap) = @_;
 
-		($left,$right) = ($right,$left) if $swap;
+		($lhs,$rhs) = ($rhs,$lhs) if $swap;
 
-		$left = sqlCondition::C($left) unless ref $left;
-		$right = sqlCondition::C($right) unless ref $right;
+		$lhs = sqlCondition::C($lhs) unless ref $lhs;
+		$rhs = sqlCondition::C($rhs) unless ref $rhs;
 
-		die 'Illegal LHS operand' unless blessed($left) && $left->isa('sqlCondition');
-		die 'Illegal RHS operand' unless blessed($right) && $left->isa('sqlCondition');
+		confess 'Illegal LHS operand' unless blessed($lhs) && $lhs->isa('sqlCondition');
+		confess 'Illegal RHS operand' unless blessed($rhs) && $rhs->isa('sqlCondition');
 
-		($left,$right);
+		return ($lhs,$rhs);
 	}
 
 sub overloadAnd
 	{
-		my ($left,$right) = getOverloadArgs(@_);
-		sqlCondition::AND($left, $right);
+		my ($lhs,$rhs) = getOverloadArgs(@_);
+		return sqlCondition::AND($lhs, $rhs);
 	}
 
 sub overloadNot
 	{
-		sqlCondition::NOT($_[0]);
+		return sqlCondition::NOT($_[0]);
 	}
 
 sub overloadOr
 	{
-		my ($left,$right) = getOverloadArgs(@_);
-		sqlCondition::OR($left, $right);
+		my ($lhs,$rhs) = getOverloadArgs(@_);
+		return sqlCondition::OR($lhs, $rhs);
 	}
 
 sub add
@@ -1237,7 +1252,7 @@ sub addSql
 		my $self = shift;
 		my $format = shift;
 
-		return $self->add(C(sprintf($format, @_)));
+		return $self->add(C(sprintf $format, @_));
 	}
 
 sub bind
@@ -1245,7 +1260,7 @@ sub bind
 		my $self = shift;
 
 		if (1 == scalar @_ && !defined $_[0] && defined $self->{_alterForNull}) {
-			($self->{_condition}) = split(' ', $self->{_condition}, 2);
+			($self->{_condition}) = (split / /, $self->{_condition}, 2);
 			$self->{_condition} .= ' IS '.($self->{_alterForNull} ? '' : 'NOT ').'NULL';
 			return $self;
 		}
@@ -1294,7 +1309,7 @@ sub C
 		if (1 == scalar @_) {
 			$cond->{_condition} = shift;
 		} else {
-			$cond->{_condition} = sprintf($_[0], @_[1..$#_]);
+			$cond->{_condition} = sprintf $_[0], @_[1..$#_];
 		}
 
 		return $cond
@@ -1309,7 +1324,7 @@ sub IN
 sub NOTIN
 	{
 		my $column = shift;
-		C("%s NOT IN($sqlQuery::PARAMETER_PLACEHOLDER)", sqlQuery::quoteWhenTable($column));
+		return C("%s NOT IN($sqlQuery::PARAMETER_PLACEHOLDER)", sqlQuery::quoteWhenTable($column));
 	}
 
 sub LIKE
@@ -1374,13 +1389,13 @@ sub GTE {return _OP('>=', @_)}
 
 sub _OP
 	{
-		my ($operator, $left, $right) = @_;
+		my ($operator, $lhs, $rhs) = @_;
 		return C('%s %s %s',
-			sqlQuery::quoteWhenTable($left),
+			sqlQuery::quoteWhenTable($lhs),
 			$operator,
 			3 != scalar @_
 				? $sqlQuery::PARAMETER_PLACEHOLDER
-				: sqlQuery::quoteWhenTable($right));
+				: sqlQuery::quoteWhenTable($rhs));
 	}
 
 sub connectedList
@@ -1389,8 +1404,16 @@ sub connectedList
 		my $cond = sqlCondition->new($type);
 
 		foreach my $a (@_) {
-			$cond->insert($a), next unless blessed($a) && $a->isa('sqlCondition');
-			$cond->insert($a), next if $a->{type} != $type;
+			unless (blessed($a) && $a->isa('sqlCondition')) {
+				$cond->insert($a);
+				next;
+			}
+
+			if ($a->{type} != $type) {
+				$cond->insert($a);
+				next;
+			}
+
 			$cond->_bind($_) foreach $a->releaseBoundArgs();
 			$cond->insert(@{$a->{_parts}});
 		}

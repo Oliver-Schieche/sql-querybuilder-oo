@@ -1,6 +1,12 @@
 Change log for SQL::QueryBuilder::OO
 $Date$
 
+0.2.3	2015-09-02 (Wed, 2 Sep 2015)
+	* code clean-up according to self-defined Perl::Critic rules
+	* added "no warning" pragma for experimental features
+	* cleaned up and corrected Build.PL
+	* (svn) appended ignore property for build artifacts
+
 0.2.2	2015-03-18 (Wed, 18 Mar 2015)
 	* added: operator overloading for `sqlCondition`s
 	* added: `sqlValueDate` and `sqlValueDateTime` binding parameters

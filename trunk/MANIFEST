@@ -4,3 +4,8 @@ MANIFEST
 README
 lib/SQL/QueryBuilder/OO.pm
 t/00.use.t
+t/.perlcriticrc
+t/author-critic.t
+t/critic.t
+META.yml
+META.json
