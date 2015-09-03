@@ -1469,7 +1469,7 @@ __END__
 
 =pod
 
-=for stopwords SQL PHP Schieche OO schieche namespace Booleans boolean unary falsy ad-hoc sqlQuery DBI prolog timestamp ARRAYREFs MySQL's HASHREFs
+=for stopwords SQL PHP Schieche OO schieche namespace Booleans boolean un unary falsy ad-hoc sqlQuery DBI prolog timestamp ARRAYREFs MySQL's HASHREFs
 
 =head1 NAME
 
