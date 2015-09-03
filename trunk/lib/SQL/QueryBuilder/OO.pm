@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use vars qw($VERSION);
 
-$VERSION = '0.2.3';
+$VERSION = '0.2.4';
 ##------------------------------------------------------------------------------
 package sqlQuery;
 
@@ -582,6 +582,7 @@ use strict;
 use warnings;
 use base 'sqlParameter';
 use Carp qw(croak);
+use Scalar::Util 'blessed';
 
 sub new {
 	my $self = shift->SUPER::new(@_);
@@ -589,6 +590,12 @@ sub new {
 	unless (@{$self->{-value}}) {
 		local $Carp::CarpLevel = $Carp::CarpLevel + 2; ## no critic
 		croak 'Empty lists can break SQL syntax.';
+	} else {
+		$self->{-value} = [map {
+			blessed($_) && $_->isa('sqlParameter')
+				? $_
+				: sqlQuery::convertArgument($_)
+		} @{$self->{-value}}];
 	}
 
 	return $self
@@ -686,10 +693,10 @@ sub gatherBoundArgs
 		my (@args);
 
 		push @args, @{$self->{boundArgs}}
-			if $self->{boundArgs};
+			if defined $self->{boundArgs};
 		push @args, $self->gatherConditionArgs();
 
-		if ($self->{prev}) {
+		if (defined $self->{prev}) {
 			push @args, $self->{prev}->gatherBoundArgs();
 		}
 
@@ -704,7 +711,7 @@ sub assemble
 		my $assembled = $self->_assemble();
 
 		$assembled = $self->{prev}->assemble() . $assembled
-			if $self->{prev};
+			if defined $self->{prev};
 
 		return $assembled
 	}
@@ -948,7 +955,7 @@ sub gatherConditionArgs
 		my @args;
 
 		push @args, $self->{havingCond}->getBoundArgs()
-			if $self->{havingCond};
+			if defined $self->{havingCond};
 		return @args
 	}
 
@@ -1029,7 +1036,7 @@ sub gatherConditionArgs
 		my @args;
 
 		push @args, $self->{whereCond}->getBoundArgs()
-			if $self->{whereCond};
+			if defined $self->{whereCond};
 		return @args
 	}
 
@@ -1104,8 +1111,8 @@ sub _assemble
 				unless (ref $condition) {
 					$j .= "USING(`$condition`)";
 				} elsif ($condition->isa('sqlCondition')) {
-					$_ = $condition->assemble();
-					$j .= "ON($_)";
+					my $cond = $condition->assemble();
+					$j .= "ON($cond)";
 				} else {
 					confess sprintf 'Cannot use argument "%s" as join condition', $condition;
 				}
@@ -1171,7 +1178,7 @@ sub assemble
 		given($self->{type}) {
 
 			when([TYPE_CONNECT_AND, TYPE_CONNECT_OR]) {
-				return unless $self->{_parts};
+				return unless defined $self->{_parts};
 				my ($glue) = (TYPE_CONNECT_AND == $self->{type} ? ' AND ' : ' OR ');
 				return '('.join($glue, map {$_->assemble()} @{$self->{_parts}}).')';
 			}
@@ -1183,8 +1190,8 @@ sub assemble
 			}
 
 			when([TYPE_UNARY_NOT]) {
-				$_ = $self->{_argument}->assemble();
-				return "NOT($_)";
+				my $stmt = $self->{_argument}->assemble();
+				return "NOT($stmt)";
 			}
 		}
 
@@ -1235,7 +1242,7 @@ sub overloadOr
 sub add
 	{
 		my $self = shift;
-		$self->{_parts} = [] unless $self->{_parts};
+		$self->{_parts} = [] unless defined $self->{_parts};
 
 		push @{$self->{_parts}}, @_;
 		$_->setParent($self) foreach @_;
@@ -1421,7 +1428,7 @@ sub insert
 	{
 		my $self = shift;
 
-		$self->{_parts} = [] unless $self->{_parts};
+		$self->{_parts} = [] unless defined $self->{_parts};
 		return $self->add(@_);
 	}
 
@@ -1432,9 +1439,9 @@ sub _bind
 			{parameter => {isa => 'sqlParameter'}};
 
 		push @{$self->{_queryArguments}}, $parameter
-			unless $self->{parent};
+			unless defined $self->{parent};
 		$self->{parent}->up()->_bind($parameter)
-				if $self->{parent};
+				if defined $self->{parent};
 		return $self
 	}
 
