@@ -86,11 +86,7 @@ sub foundRows
 
 sub getLastInsertId
 	{
-		my $res = __PACKAGE__->new(q(SELECT LAST_INSERT_ID()))->execute;
-		my $id = $res->fetchColumn(0);
-		$res->freeResource();
-
-		return $id
+		return $sqlQuery::DBI->last_insert_id(undef, undef, undef, undef);
 	}
 
 sub new
