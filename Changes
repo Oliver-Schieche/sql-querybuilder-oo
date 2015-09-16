@@ -1,6 +1,12 @@
 Change log for SQL::QueryBuilder::OO
 $Date$
 
+0.2.4	2015-09-16 (Wed, 16 Sep 2015)
+	* removed several "write to $_" occurrences that invaded callers' namespace
+	* removed several unintended "to_string()" conversions when checking variables
+	* fixed sqlValueList to optionally convert its arguments to sqlParameter
+	* replaced cumbersome "getLastInsertId" implementation with native DBI code
+
 0.2.3	2015-09-02 (Wed, 2 Sep 2015)
 	* code clean-up according to self-defined Perl::Critic rules
 	* added "no warning" pragma for experimental features

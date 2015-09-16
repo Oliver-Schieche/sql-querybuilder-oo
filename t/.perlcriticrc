@@ -7,6 +7,8 @@ theme = docs || mine || pbp || bugs
 
 #------------------------------------------------------------------------------
 
+[-Bangs::ProhibitBitwiseOperators]
+
 [BuiltinFunctions::ProhibitBooleanGrep]
 add_themes = mine
 
@@ -55,6 +57,7 @@ add_themes = docs
 
 
 [-Subroutines::ProhibitBuiltinHomonyms]
+[-Subroutines::ProhibitCallsToUnexportedSubs]
 
 [-References::ProhibitDoubleSigils]
 
