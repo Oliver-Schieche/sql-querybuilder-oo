@@ -1,5 +1,0 @@
-Changes
-Makefile.PL
-MANIFEST
-lib/SQL/QueryBuilder/OO.pm
-t/00.use.t
